@@ -1,6 +1,8 @@
 import os
 import random
 import requests
+import threading
+import time
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -13,6 +15,7 @@ app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = "tRBDRPe24yG7J8ZQvKATurED2vIKl6+mDqpmPLRHFA28O9xAYXh1wTyH/wx7Id3wVwAQKH9aS4M456C3xUlXcxc+GJJ2TPDO4KW9RcMNr0TlraDqxQ7pQS5uN2S8EOcnqtzxS/QuN7H6/EXRroLwJwdB04t89/1O/w1cDnyilFU="
 LINE_CHANNEL_SECRET       = "2d7fa41df7847532829dd3e629dcb94c"
 GROQ_API_KEY              = "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"
+GROUP_ID                  = ""  # Grup ID buraya gelecek
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler      = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -95,6 +98,27 @@ def handle_join(event):
 def handle_message(event):
     user_id      = event.source.user_id
     user_message = event.message.text.strip()
+
+    # Grup ID ogren - hem ozelden hem gruptan calisir
+    if "grup id" in user_message.lower():
+        if event.source.type == "group":
+            gid = event.source.group_id
+            reply = f"Grup ID: {gid}"
+        else:
+            reply = "Bu komutu grupta yazman lazim!"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+        return
+
+    # Gruba mesaj gonder - sadece ozelden
+    if user_message.lower().startswith("/gonder "):
+        if event.source.type != "group":
+            mesaj = user_message[8:]
+            if GROUP_ID:
+                line_bot_api.push_message(GROUP_ID, TextSendMessage(text=mesaj))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ Mesaj gruba gonderildi!"))
+            else:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ Grup ID henuz tanimlanmadi!"))
+            return
 
     # Hava komutu
     if user_message.lower().startswith("/hava"):
