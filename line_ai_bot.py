@@ -1,39 +1,27 @@
-"""
-Line AI Bot - Claude Destekli
-================================
-Gelen Line mesajlarına Claude AI ile otomatik cevap verir.
-
-Gereksinimler:
-  pip install flask line-bot-sdk anthropic
-
-Render.com'da çalıştırmak için:
-  - Bu dosyayı GitHub'a yükle
-  - Render.com'da Web Service oluştur
-  - Environment Variables ekle
-"""
-
 import os
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import anthropic
+import google.generativeai as genai
 
 app = Flask(__name__)
 
 # ─────────────────────────────────────────
-#  AYARLAR — Render.com'da Environment Variables olarak ekle
+#  AYARLAR
 # ─────────────────────────────────────────
-LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
-LINE_CHANNEL_SECRET       = os.environ.get("LINE_CHANNEL_SECRET", "")
-ANTHROPIC_API_KEY         = os.environ.get("ANTHROPIC_API_KEY", "")
+LINE_CHANNEL_ACCESS_TOKEN = "C8eyVgzqUSSIMz3sYFB93/agk+7KoPB+Nkr6f7ZE8NhqceSbzfD6dUCEabCKgWTxVwAQKH9aS4M456C3xUIXcxc+GJJ2TPDO4KW9RcMNr0T/1VUqQ7d1rk30tckIAAFo9SrOtqzMCNq1oADwabljMgdB04t89/1O/w1cDnyilFU="
+LINE_CHANNEL_SECRET       = "2d7fa41df7847532829dd3e629dcb94c"
+GEMINI_API_KEY            = "AIzaSyDSAC5jciZdG559itHgBixH5zxEdiCKndI"
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler      = WebhookHandler(LINE_CHANNEL_SECRET)
-ai_client    = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 # ─────────────────────────────────────────
-#  BOT KİŞİLİĞİ — istediğin gibi özelleştir
+#  BOT KİŞİLİĞİ
 # ─────────────────────────────────────────
 BOT_PERSONA = """
 Sen yardımsever, samimi ve zeki bir asistansın.
@@ -42,27 +30,25 @@ Kısa ve net cevaplar ver, gereksiz uzatma.
 Emoji kullanabilirsin ama abartma.
 """
 
-# Her kullanıcının sohbet geçmişini sakla (bellekte)
+# Sohbet geçmişi
 conversation_history = {}
-MAX_HISTORY = 10  # En fazla kaç mesaj hatırlasın
+MAX_HISTORY = 10
 
 # ─────────────────────────────────────────
-#  WEBHOOK — Line'dan gelen mesajları al
+#  WEBHOOK
 # ─────────────────────────────────────────
 @app.route("/webhook", methods=["POST"])
 def webhook():
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
-
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
-
     return "OK"
 
 # ─────────────────────────────────────────
-#  MESAJ OLAYINI İŞLE
+#  MESAJ İŞLE
 # ─────────────────────────────────────────
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
@@ -71,38 +57,27 @@ def handle_message(event):
 
     print(f"[{user_id}] Gelen: {user_message}")
 
-    # Sohbet geçmişini al veya oluştur
     if user_id not in conversation_history:
         conversation_history[user_id] = []
 
     history = conversation_history[user_id]
-    history.append({"role": "user", "content": user_message})
+    history.append(f"Kullanıcı: {user_message}")
 
-    # Geçmişi sınırla
     if len(history) > MAX_HISTORY * 2:
         history = history[-(MAX_HISTORY * 2):]
         conversation_history[user_id] = history
 
-    # Claude AI'dan cevap al
     try:
-        response = ai_client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=500,
-            system=BOT_PERSONA,
-            messages=history
-        )
-        reply_text = response.content[0].text
-
-        # Cevabı geçmişe ekle
-        history.append({"role": "assistant", "content": reply_text})
-
+        prompt = BOT_PERSONA + "\n\nSohbet geçmişi:\n" + "\n".join(history) + "\n\nAsistan:"
+        response = model.generate_content(prompt)
+        reply_text = response.text.strip()
+        history.append(f"Asistan: {reply_text}")
     except Exception as e:
         reply_text = "Üzgünüm, şu an cevap veremiyorum. Lütfen tekrar dene. 🙏"
         print(f"[AI HATA] {e}")
 
     print(f"[{user_id}] Cevap: {reply_text}")
 
-    # Line'a cevap gönder
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text=reply_text)
