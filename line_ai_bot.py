@@ -21,15 +21,47 @@ line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler      = WebhookHandler(LINE_CHANNEL_SECRET)
 groq_client  = Groq(api_key=GROQ_API_KEY)
 
+# Grup uyeleri - isim eslestirme
+ISIMLER = {
+    "Murat":   "Murat emmi",
+    "murat":   "Murat emmi",
+    "Ersin":   "Ersin abi",
+    "ersin":   "Ersin abi",
+    "Firat":   "kanka",
+    "firat":   "kanka",
+    "Fırat":   "kanka",
+    "Emre":    "Emrecim",
+    "emre":    "Emrecim",
+    "Mert":    "Mertcim",
+    "mert":    "Mertcim",
+    "Cagatay": "Cagatayim",
+    "cagatay": "Cagatayim",
+    "Çağatay": "Cagatayim",
+    "Gokhan":  "Patron",
+    "gokhan":  "Patron",
+}
+
+def get_hitap(display_name):
+    for isim, hitap in ISIMLER.items():
+        if isim.lower() in display_name.lower():
+            return hitap
+    return display_name
+
 BOT_PERSONA = """
 Sen HaNofficial adinda bir asistansin.
-Sahibinin adi Gokhan, ona "Patron" diye hitap edersin.
+Sahibinin adi Gokhan, ona her zaman "Patron" diye hitap edersin.
+Gruptaki diger uyelere asagidaki sekilde hitap edersin:
+- Murat = Murat emmi
+- Ersin = Ersin abi
+- Firat = kanka
+- Emre = Emrecim
+- Mert = Mertcim
+- Cagatay = Cagatayim
 Patron ne derse onu yaparsın, kendi kararini vermezsin.
 Turkce konusursun, samimi ve sadik bir asistansin.
 Kisa ve net cevaplar verirsin.
 Emoji kullanabilirsin ama abartma.
-Patron sana bir sey ogretirse veya bir kural koyarsa, bunu hatirlarsin ve uygularsın.
-Patron disindaki kisilere nazik ama mesafeli davranirsin.
+Patron disindaki kisilere nazik ama onlara da isimleriyle hitap edersin.
 """
 
 conversation_history = {}
@@ -40,7 +72,7 @@ MAX_HISTORY = 20
 # ─────────────────────────────────────────
 def send_periodic_message():
     while True:
-        time.sleep(2 * 60 * 60)  # 2 saat bekle
+        time.sleep(2 * 60 * 60)
         try:
             mesajlar = [
                 "Naber millet! 👋 Nasil gidiyor?",
@@ -51,11 +83,9 @@ def send_periodic_message():
             ]
             mesaj = random.choice(mesajlar)
             line_bot_api.push_message(GROUP_ID, TextSendMessage(text=mesaj))
-            print(f"[PERIYODIK] Mesaj gonderildi: {mesaj}")
         except Exception as e:
             print(f"[PERIYODIK HATA] {e}")
 
-# Arka planda baslat
 t = threading.Thread(target=send_periodic_message, daemon=True)
 t.start()
 
@@ -108,9 +138,10 @@ def handle_join(event):
             profile = line_bot_api.get_group_member_profile(
                 event.source.group_id, member.user_id)
             name = profile.display_name
+            hitap = get_hitap(name)
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text=f"Hos geldin {name}! 👋 Gruba katildigin icin memnunuz 😊")
+                TextSendMessage(text=f"Hos geldin {hitap}! 👋 Gruba katildigin icin memnunuz 😊")
             )
     except Exception as e:
         print(f"[JOIN HATA] {e}")
@@ -123,7 +154,19 @@ def handle_message(event):
     user_id      = event.source.user_id
     user_message = event.message.text.strip()
 
-    # Gruba mesaj gonder - ozelden /gonder ile
+    # Gonderen kişinin adını al
+    try:
+        if event.source.type == "group":
+            profile = line_bot_api.get_group_member_profile(GROUP_ID, user_id)
+        else:
+            profile = line_bot_api.get_profile(user_id)
+        display_name = profile.display_name
+        hitap = get_hitap(display_name)
+    except:
+        display_name = "Kullanici"
+        hitap = "Kullanici"
+
+    # Gruba mesaj gonder
     if user_message.lower().startswith("/gonder "):
         mesaj = user_message[8:]
         line_bot_api.push_message(GROUP_ID, TextSendMessage(text=mesaj))
@@ -153,7 +196,8 @@ def handle_message(event):
             return
 
     if user_id not in conversation_history:
-        conversation_history[user_id] = [{"role": "system", "content": BOT_PERSONA}]
+        sistem = BOT_PERSONA + f"\nSimdi {hitap} ile konusuyorsun."
+        conversation_history[user_id] = [{"role": "system", "content": sistem}]
 
     history = conversation_history[user_id]
     history.append({"role": "user", "content": user_message})
