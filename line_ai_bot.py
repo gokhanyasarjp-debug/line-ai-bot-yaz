@@ -15,7 +15,7 @@ app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = "tRBDRPe24yG7J8ZQvKATurED2vIKl6+mDqpmPLRHFA28O9xAYXh1wTyH/wx7Id3wVwAQKH9aS4M456C3xUlXcxc+GJJ2TPDO4KW9RcMNr0TlraDqxQ7pQS5uN2S8EOcnqtzxS/QuN7H6/EXRroLwJwdB04t89/1O/w1cDnyilFU="
 LINE_CHANNEL_SECRET       = "2d7fa41df7847532829dd3e629dcb94c"
 GROQ_API_KEY              = "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"
-GROUP_ID                  = ""  # Grup ID buraya gelecek
+GROUP_ID                  = "C15ce6a2770453c0255912c829cab8572"
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler      = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -34,6 +34,30 @@ Patron disindaki kisilere nazik ama mesafeli davranirsin.
 
 conversation_history = {}
 MAX_HISTORY = 20
+
+# ─────────────────────────────────────────
+#  2 SAATTE BIR NABER MILLET
+# ─────────────────────────────────────────
+def send_periodic_message():
+    while True:
+        time.sleep(2 * 60 * 60)  # 2 saat bekle
+        try:
+            mesajlar = [
+                "Naber millet! 👋 Nasil gidiyor?",
+                "Hey millet, ne var ne yok? 😄",
+                "Selam! Hayat nasil? 🙌",
+                "Naber! Umarim iyisinizdir 😊",
+                "Hey! Keyifler nasil? 🎉"
+            ]
+            mesaj = random.choice(mesajlar)
+            line_bot_api.push_message(GROUP_ID, TextSendMessage(text=mesaj))
+            print(f"[PERIYODIK] Mesaj gonderildi: {mesaj}")
+        except Exception as e:
+            print(f"[PERIYODIK HATA] {e}")
+
+# Arka planda baslat
+t = threading.Thread(target=send_periodic_message, daemon=True)
+t.start()
 
 # ─────────────────────────────────────────
 #  HAVA DURUMU
@@ -99,26 +123,15 @@ def handle_message(event):
     user_id      = event.source.user_id
     user_message = event.message.text.strip()
 
-    # Grup ID ogren - hem ozelden hem gruptan calisir
-    if "grup id" in user_message.lower():
-        if event.source.type == "group":
-            gid = event.source.group_id
-            reply = f"Grup ID: {gid}"
-        else:
-            reply = "Bu komutu grupta yazman lazim!"
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
-        return
-
-    # Gruba mesaj gonder - sadece ozelden
+    # Gruba mesaj gonder - ozelden /gonder ile
     if user_message.lower().startswith("/gonder "):
-        if event.source.type != "group":
-            mesaj = user_message[8:]
-            if GROUP_ID:
-                line_bot_api.push_message(GROUP_ID, TextSendMessage(text=mesaj))
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ Mesaj gruba gonderildi!"))
-            else:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ Grup ID henuz tanimlanmadi!"))
-            return
+        mesaj = user_message[8:]
+        line_bot_api.push_message(GROUP_ID, TextSendMessage(text=mesaj))
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="✅ Mesaj gruba gonderildi!")
+        )
+        return
 
     # Hava komutu
     if user_message.lower().startswith("/hava"):
