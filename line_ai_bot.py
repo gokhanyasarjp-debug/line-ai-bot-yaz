@@ -1,9 +1,11 @@
 import os
 import random
+import requests
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from linebot.models import (MessageEvent, TextMessage, TextSendMessage,
+                             MemberJoinedEvent)
 from groq import Groq
 
 app = Flask(__name__)
@@ -17,20 +19,48 @@ handler      = WebhookHandler(LINE_CHANNEL_SECRET)
 groq_client  = Groq(api_key=GROQ_API_KEY)
 
 BOT_PERSONA = """
-Sen HaN adında bir asistansın.
-Sahibinin adı Gokhan, ona "Patron" diye hitap edersin.
-Patron ne derse onu yaparsın, kendi kararını vermezsin.
-Patron'un talimatlarını harfiyen uygularsın.
-Türkçe konuşursun, samimi ve sadık bir asistansın.
-Kısa ve net cevaplar verirsin.
+Sen HaNofficial adinda bir asistansin.
+Sahibinin adi Gokhan, ona "Patron" diye hitap edersin.
+Patron ne derse onu yaparsın, kendi kararini vermezsin.
+Turkce konusursun, samimi ve sadik bir asistansin.
+Kisa ve net cevaplar verirsin.
 Emoji kullanabilirsin ama abartma.
-Patron sana bir şey öğretirse veya bir kural koyarsa, bunu hatırlarsın ve uygularsın.
-Patron dışındaki kişilere nazik ama mesafeli davranırsın.
+Patron sana bir sey ogretirse veya bir kural koyarsa, bunu hatirlarsin ve uygularsın.
+Patron disindaki kisilere nazik ama mesafeli davranirsin.
 """
 
 conversation_history = {}
 MAX_HISTORY = 20
 
+# ─────────────────────────────────────────
+#  HAVA DURUMU
+# ─────────────────────────────────────────
+def get_weather(city):
+    try:
+        url = f"https://wttr.in/{city}?format=3&lang=tr"
+        r = requests.get(url, timeout=5)
+        return r.text.strip()
+    except:
+        return "Hava durumu alinamadi. 🌫️"
+
+# ─────────────────────────────────────────
+#  DOVİZ KURU
+# ─────────────────────────────────────────
+def get_exchange():
+    try:
+        r = requests.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=5)
+        data = r.json()
+        usd_try = data["rates"]["TRY"]
+        eur_usd = data["rates"]["EUR"]
+        eur_try = usd_try / eur_usd
+        return (f"💵 1 USD = {usd_try:.2f} TL\n"
+                f"💶 1 EUR = {eur_try:.2f} TL")
+    except:
+        return "Doviz bilgisi alinamadi. 📉"
+
+# ─────────────────────────────────────────
+#  WEBHOOK
+# ─────────────────────────────────────────
 @app.route("/webhook", methods=["POST"])
 def webhook():
     signature = request.headers.get("X-Line-Signature", "")
@@ -41,15 +71,49 @@ def webhook():
         abort(400)
     return "OK"
 
+# ─────────────────────────────────────────
+#  GRUBA KATILAN KARŞİLA
+# ─────────────────────────────────────────
+@handler.add(MemberJoinedEvent)
+def handle_join(event):
+    try:
+        for member in event.joined.members:
+            profile = line_bot_api.get_group_member_profile(
+                event.source.group_id, member.user_id)
+            name = profile.display_name
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=f"Hos geldin {name}! 👋 Gruba katildigin icin memnunuz 😊")
+            )
+    except Exception as e:
+        print(f"[JOIN HATA] {e}")
+
+# ─────────────────────────────────────────
+#  MESAJ İŞLE
+# ─────────────────────────────────────────
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    # Grupta yuzde 50 sessiz kal
-    if event.source.type == "group":
-        if random.random() > 0.5:
-            return
-
     user_id      = event.source.user_id
-    user_message = event.message.text
+    user_message = event.message.text.strip()
+
+    # Hava komutu
+    if user_message.lower().startswith("/hava"):
+        parts = user_message.split(" ", 1)
+        city = parts[1] if len(parts) > 1 else "Istanbul"
+        reply = get_weather(city)
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+        return
+
+    # Doviz komutu
+    if user_message.lower().startswith("/doviz"):
+        reply = get_exchange()
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+        return
+
+    # Grupta sadece ismi gecince cevap ver
+    if event.source.type == "group":
+        if "HaNofficial" not in user_message and "hanofficial" not in user_message.lower():
+            return
 
     if user_id not in conversation_history:
         conversation_history[user_id] = [{"role": "system", "content": BOT_PERSONA}]
@@ -80,7 +144,7 @@ def handle_message(event):
 
 @app.route("/", methods=["GET"])
 def health():
-    return "HaN AI Bot calisiyor!", 200
+    return "HaNofficial AI Bot calisiyor!", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
